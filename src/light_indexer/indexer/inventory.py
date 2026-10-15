@@ -13,7 +13,7 @@ from .cache import hash_arquivo
 
 EXTENSOES_IMAGEM = (".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp", ".webp")
 
-EXTENSOES_PADRAO = (".pdf", ".txt") + EXTENSOES_IMAGEM
+EXTENSOES_PADRAO = (".pdf", ".txt", ".docx") + EXTENSOES_IMAGEM
 PREFIXO_PADRAO = "documentos"
 
 

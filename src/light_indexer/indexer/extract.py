@@ -178,6 +178,32 @@ class Extrator:
             n_sem_texto=1,
         )
 
+    def _extrair_docx(self, caminho: Path) -> ResultadoExtracao:
+
+        import subprocess
+
+        # TODO: definir local de instalação do libreoffice (a versão portable)
+        # TODO: definir um diretório de arquivos temporários para guardar os pdfs
+        caminho_libreoffice = ""
+        caminho_saida = ""
+
+        comando = [caminho_libreoffice, "--headless", "--convert-to", "pdf", "--outdir", caminho_saida, caminho]
+
+        try:
+            retcode = subprocess.call(comando)
+        except Exception as exc:
+            raise ErroExtracao(f"Falha ao converter docx em pdf: {exc}") from exc
+
+        if retcode != 0:
+            raise ErroExtracao(f"Falha ao converter docx em pdf. Código de retorno: {retcode}")
+
+        caminho_convertido = Path(caminho_saida) / caminho.name
+
+        resultado = self._extrair_pdf(caminho_convertido)
+
+        caminho_convertido.unlink(missing_ok=True)
+
+        return resultado
 
 def _processar_um(
     arquivo: ArquivoAcervo,
