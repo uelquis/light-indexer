@@ -14,9 +14,14 @@ from pathlib import Path
 from .cache import CacheExtracao, ResultadoExtracao, chave_cache, hash_arquivo
 from .inventory import EXTENSOES_IMAGEM, ArquivoAcervo
 
+import subprocess, tempfile
+
 FONTE_NATIVO = "nativo"
 FONTE_OCR = "ocr"
 FONTE_VAZIO = "sem_texto"
+
+SOFFICE_PATH = ""
+SOFFICE_TIMEOUT = 300
 
 
 class ErroExtracao(Exception):
@@ -46,6 +51,7 @@ class Extrator:
         self.strict = strict
         self.logger = logger
         self._tesseract_indisponivel = False
+        self._word_indisponivel = False
 
     def _aviso(self, msg: str, *args) -> None:
         if self.logger:
@@ -57,6 +63,8 @@ class Extrator:
         try:
             if sufixo == ".pdf":
                 return self._extrair_pdf(caminho)
+            if sufixo == ".docx":
+                return self._extrair_docx(caminho)
             if sufixo in EXTENSOES_IMAGEM:
                 return self._extrair_imagem(caminho)
             return self._extrair_texto(caminho)
@@ -180,30 +188,80 @@ class Extrator:
 
     def _extrair_docx(self, caminho: Path) -> ResultadoExtracao:
 
-        import subprocess
+        with tempfile.TemporaryDirectory(prefix="light-indexer-") as tmp:
+            saida = Path(tmp)
+            
+            try:
+                convertido = self._para_pdf_word(caminho, saida) or self._para_pdf_soffice(caminho, saida)
 
-        # TODO: definir local de instalação do libreoffice (a versão portable)
-        # TODO: definir um diretório de arquivos temporários para guardar os pdfs
-        caminho_libreoffice = ""
-        caminho_saida = ""
+                if not convertido:
+                    raise Exception("Falha ao converter docx para pdf.")
+                
+            except Exception as exc:
+                self._aviso("Falha ao extrair docx: (%s)", exc)
+                return ResultadoExtracao(
+                    paginas=[{"pagina": 1, "texto": "", "fonte": FONTE_VAZIO}],
+                    n_ocr=0,
+                    n_sem_texto=1,
+                )
+            
+            return self._extrair_pdf(convertido)
 
-        comando = [caminho_libreoffice, "--headless", "--convert-to", "pdf", "--outdir", caminho_saida, caminho]
+    def _para_pdf_word(self, caminho: Path, saida: Path) -> Path | None:
 
+        convertido_caminho = saida / caminho.with_suffix(".pdf").name        
+        
         try:
-            retcode = subprocess.call(comando)
+            from docx2pdf import convert
+        except ImportError as exc:
+            raise ErroExtracao("docx2pdf indisponivel: {exc}") from exc
+        
+        try:
+            convert(str(caminho), str(saida))
+
         except Exception as exc:
-            raise ErroExtracao(f"Falha ao converter docx em pdf: {exc}") from exc
+            self._aviso("Word/docx2pdf falhou (%s)", exc)
+            return None
+        
+        return convertido_caminho
 
-        if retcode != 0:
-            raise ErroExtracao(f"Falha ao converter docx em pdf. Código de retorno: {retcode}")
+    def _para_pdf_soffice(self, caminho: Path, saida: Path) -> Path | None:
 
-        caminho_convertido = Path(caminho_saida) / caminho.name
-
-        resultado = self._extrair_pdf(caminho_convertido)
-
-        caminho_convertido.unlink(missing_ok=True)
-
-        return resultado
+        convertido_caminho = saida / caminho.with_suffix(".pdf").name
+        
+        soffice = Path(SOFFICE_PATH)
+        if soffice is None or not soffice.is_file :
+            raise ErroExtracao("soffice indisponivel")
+        
+        if not soffice.is_file():
+            return None
+        
+        perfil = (saida / "lo_profile").as_uri()
+        comando = [
+            str(soffice),
+            f"-env:UserInstallation={perfil}",
+            "--headless",
+            "--convert-to",
+            "pdf",
+            "--outdir",
+            str(saida),
+            str(caminho),
+        ]
+        try:
+            proc = subprocess.run(
+                comando, timeout=SOFFICE_TIMEOUT, capture_output=True
+            )
+        except subprocess.TimeoutExpired as exc:
+            self._aviso("libreoffice demorou responder (%s)", exc)
+            return None
+        except Exception as exc:
+            self._aviso("libreoffice falhou (%s)", exc)
+            return None
+        if proc.returncode != 0:
+            self._aviso("libreoffice retornou (%s)", proc.returncode)
+            return None
+        
+        return convertido_caminho
 
 def _processar_um(
     arquivo: ArquivoAcervo,
