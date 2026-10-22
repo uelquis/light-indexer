@@ -112,15 +112,17 @@ class Extrator:
             return ""
 
         try:
-            from PIL import Image
+            from PIL import Image, ImageOps
+            import pytesseract
         except ImportError as exc:  # pragma: no cover
-            raise ErroExtracao("pillow nao instalado (uv sync --extra build)") from exc
+            raise ErroExtracao("pacotes requeridos nao instalados (uv sync --extra build)") from exc
         
         try:
-            import pytesseract
-            
             imagem = Image.open(obj)
-            return pytesseract.image_to_string(imagem, lang=self.params.ocr_lang)
+
+            imagem_processada = ImageOps.autocontrast(ImageOps.grayscale(imagem)) 
+
+            return pytesseract.image_to_string(imagem_processada, lang=self.params.ocr_lang)
         except Exception as exc:
             if self.strict:
                 raise ErroExtracao(f"falha de OCR: {exc}") from exc
