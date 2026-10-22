@@ -129,7 +129,13 @@ class Extrator:
             return ""
 
     def _extrair_imagem(self, caminho: Path) -> ResultadoExtracao:
-        raise NotImplementedError()
+        texto = self._ocr(caminho)
+
+        return ResultadoExtracao(
+            paginas=[{"pagina": 1, "texto": texto, "fonte": FONTE_OCR}],
+            n_ocr=1,
+            n_sem_texto= 0 if texto.strip() else 1
+        )
 
     def _extrair_texto(self, caminho: Path) -> ResultadoExtracao:
         bruto = caminho.read_bytes()
